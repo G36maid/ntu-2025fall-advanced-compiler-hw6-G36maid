@@ -1,0 +1,29 @@
+# ntu-2025fall-advanced-compiler-hw6-G36maid Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2025-12-19
+
+## Active Technologies
+
+- Rust 2024 (Edition 2024) (001-dead-store-elimination)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+cargo test [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] cargo clippy
+
+## Code Style
+
+Rust 2024 (Edition 2024): Follow standard conventions
+
+## Recent Changes
+
+- 001-dead-store-elimination: Added Rust 2024 (Edition 2024)
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->
