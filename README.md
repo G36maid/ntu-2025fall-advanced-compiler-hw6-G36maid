@@ -256,7 +256,7 @@ cargo build --release
 
 ### Running the DSE Pass
 ```bash
-cargo run --release -- -i <input.bc> -o <output.bc>
+cargo run --release -- -i <input.ll> -o <output.bc>
 ```
 
 ### Running Tests
@@ -264,4 +264,196 @@ cargo run --release -- -i <input.bc> -o <output.bc>
 cargo test
 ```
 
-See [docs/report.md](docs/report.md) for technical details and algorithm design.
+### Running Benchmarks
+```bash
+./scripts/run_benchmark.sh
+```
+
+See [docs/algorithm_summary.md](docs/algorithm_summary.md) for technical details and algorithm design.
+
+## 6 CI/CD Pipeline
+
+This project includes a comprehensive GitHub Actions CI/CD pipeline with the following jobs:
+
+### Pipeline Jobs
+
+#### 1. Code Quality
+- **Formatting check**: Validates Rust code formatting with `cargo fmt`
+- **Linting**: Runs `cargo clippy` with strict warnings-as-errors
+- **Cache management**: Speeds up subsequent builds
+
+#### 2. Build and Test
+- **Multi-version testing**: Tests on both stable and nightly Rust
+- **LLVM 21 installation**: Automatically sets up LLVM 21 environment
+- **Comprehensive testing**: Runs all integration tests
+- **Artifact upload**: Saves test failures for debugging
+- **Matrix strategy**: Ensures compatibility across Rust versions
+
+#### 3. Benchmarking
+- **Automated benchmarks**: Runs the full benchmark suite
+- **Performance metrics**: Extracts and displays optimization statistics
+- **Results validation**: Fails if no stores are eliminated
+- **Artifact storage**: Saves benchmark results for 30 days
+- **Summary generation**: Creates readable benchmark reports
+
+#### 4. Documentation
+- **Doc generation**: Builds Rust documentation with `cargo doc`
+- **Doc validation**: Checks for broken links and missing docs
+- **File verification**: Ensures all documentation files exist
+- **Artifact upload**: Publishes docs for review
+
+#### 5. Security Audit
+- **Dependency scanning**: Runs `cargo audit` to check for vulnerabilities
+- **Automatic updates**: Can be configured to create PRs for security fixes
+
+#### 6. Code Coverage (Optional)
+- **Coverage reporting**: Generates LCOV coverage reports
+- **Trend tracking**: Monitors test coverage over time
+- **Push-only**: Runs only on push events to save resources
+
+#### 7. Release Build
+- **Optimized binary**: Creates stripped release binary
+- **Package creation**: Bundles all deliverables into tarball
+- **Long-term storage**: Retains release artifacts for 90 days
+- **Branch filtering**: Only runs on main/feature branches
+
+#### 8. Pipeline Summary
+- **Status dashboard**: Shows all job results in one view
+- **Commit tracking**: Links results to specific commits
+- **Event logging**: Records trigger context
+
+### Viewing CI/CD Results
+
+#### On GitHub:
+1. Navigate to the **Actions** tab in your repository
+2. Select a workflow run to see detailed job results
+3. Check the **Summary** page for benchmark metrics
+4. Download artifacts from completed runs
+
+#### Benchmark Results Format:
+```
+Store Instructions:
+  Before:  83
+  After:   74
+  Removed: 9 (10.84%)
+```
+
+### Triggering the Pipeline
+
+The CI/CD pipeline automatically runs on:
+- **Push** to `main` or `001-dead-store-elimination` branches
+- **Pull requests** to `main` branch
+- **Manual trigger** via workflow_dispatch
+
+### Local CI Testing (Optional)
+
+To test the workflow locally before pushing:
+
+```bash
+# Install act (GitHub Actions local runner)
+# https://github.com/nektos/act
+
+# Run all jobs
+act
+
+# Run specific job
+act -j test
+
+# Run with secrets
+act -s GITHUB_TOKEN=your_token
+```
+
+### CI/CD Environment Requirements
+
+The pipeline automatically handles:
+- ✅ Rust toolchain installation (stable + nightly)
+- ✅ LLVM 21 installation and configuration
+- ✅ Cargo dependency caching
+- ✅ Environment variable setup
+- ✅ Artifact management
+
+### Artifact Retention
+
+| Artifact Type | Retention Period | Description |
+|---------------|------------------|-------------|
+| Test Failures | Default | Debug information from failed tests |
+| Benchmark Results | 30 days | Performance metrics and IR comparisons |
+| Documentation | 30 days | Generated Rust docs |
+| Coverage Reports | 30 days | Code coverage data |
+| Release Packages | 90 days | Complete release tarballs |
+
+### Status Badges
+
+Add these to the top of your README to show pipeline status:
+
+```markdown
+![CI/CD Pipeline](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/ci.yml/badge.svg)
+```
+
+### Customizing the Pipeline
+
+To modify the CI/CD pipeline, edit `.github/workflows/ci.yml`:
+
+```bash
+# Example: Change Rust versions tested
+strategy:
+  matrix:
+    rust: [stable, nightly, 1.75.0]  # Add specific versions
+
+# Example: Add new job
+new-job:
+  name: Custom Job
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - run: echo "Custom step"
+```
+
+### Troubleshooting CI/CD
+
+**Common Issues:**
+
+1. **LLVM installation fails**: Check LLVM version compatibility
+2. **Cache misses**: Verify `Cargo.lock` is committed
+3. **Test timeouts**: Increase timeout in workflow file
+4. **Artifact upload fails**: Check artifact size limits (500MB max)
+
+**Debug Steps:**
+
+```bash
+# Enable debug logging
+- run: cargo test --verbose
+  env:
+    RUST_LOG: debug
+
+# Show environment
+- run: |
+    env | sort
+    llvm-config --version
+```
+
+## 7 Project Structure
+
+```
+.
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # GitHub Actions CI/CD pipeline
+├── benches/
+│   └── benchmark.c             # Performance benchmark suite
+├── docs/
+│   ├── acd_2025_hw6.md         # Assignment specification
+│   └── algorithm_summary.md    # Technical documentation
+├── scripts/
+│   └── run_benchmark.sh        # Automated benchmarking script
+├── src/
+│   ├── lib.rs                  # Library module declarations
+│   ├── main.rs                 # CLI entry point
+│   ├── analysis.rs             # DSE analysis (backward data flow)
+│   └── transform.rs            # IR transformation logic
+├── tests/
+│   ├── integration.rs          # Integration test suite
+│   └── fixtures/               # Test LLVM IR files
+├── Cargo.toml                  # Rust dependencies
+└── README.md                   # This file
+```
