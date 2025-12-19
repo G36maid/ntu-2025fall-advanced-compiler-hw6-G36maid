@@ -299,7 +299,12 @@ jobs:
           key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: |
+          if ! command -v cargo-audit &> /dev/null; then
+            cargo install cargo-audit --locked
+          else
+            echo "cargo-audit already installed"
+          fi
 
       - name: Run security audit
         run: cargo audit
@@ -331,7 +336,12 @@ jobs:
           echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> $GITHUB_ENV
 
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --locked
+        run: |
+          if ! command -v cargo-llvm-cov &> /dev/null; then
+            cargo install cargo-llvm-cov --locked
+          else
+            echo "cargo-llvm-cov already installed"
+          fi
 
       - name: Generate coverage
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
