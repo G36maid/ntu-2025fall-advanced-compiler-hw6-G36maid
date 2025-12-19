@@ -1,5 +1,5 @@
 use inkwell::basic_block::BasicBlock;
-use inkwell::values::{InstructionOpcode, InstructionValue, PointerValue, Operand};
+use inkwell::values::{InstructionOpcode, InstructionValue, Operand, PointerValue};
 use std::collections::HashSet;
 
 /// Dead Store Elimination analysis engine.
@@ -84,9 +84,10 @@ impl<'ctx> DSEAnalysis<'ctx> {
         while let Some(instr) = instr_iter {
             for i in 0..instr.get_num_operands() {
                 if let Some(Operand::Value(basic_value)) = instr.get_operand(i)
-                    && basic_value.is_pointer_value() {
-                        live_set.insert(basic_value.into_pointer_value());
-                    }
+                    && basic_value.is_pointer_value()
+                {
+                    live_set.insert(basic_value.into_pointer_value());
+                }
             }
             instr_iter = instr.get_next_instruction();
         }
@@ -96,10 +97,23 @@ impl<'ctx> DSEAnalysis<'ctx> {
         while let Some(instr) = current_instr {
             match instr.get_opcode() {
                 InstructionOpcode::Store => {
-                    // Operand 1 is the pointer in `store val, ptr`
-                    // Note: inkwell/LLVM might differ by version, but typically 1 is ptr.
-                    if let Some(Operand::Value(basic_value)) = instr.get_operand(1)
-                        && basic_value.is_pointer_value() {
+                    // CRITICAL: Never eliminate volatile stores (per spec edge cases)
+                    // Volatile stores have observable side effects and must be preserved
+                    if instr.get_volatile().unwrap_or(false) {
+                        // Volatile store - mark as live and skip analysis
+                        if let Some(Operand::Value(basic_value)) = instr.get_operand(1)
+                            && basic_value.is_pointer_value()
+                        {
+                            live_set.insert(basic_value.into_pointer_value());
+                        }
+                        // Move to next instruction without marking as dead
+                    } else {
+                        // Non-volatile store - perform normal dead store analysis
+                        // Operand 1 is the pointer in `store val, ptr`
+                        // Note: inkwell/LLVM might differ by version, but typically 1 is ptr.
+                        if let Some(Operand::Value(basic_value)) = instr.get_operand(1)
+                            && basic_value.is_pointer_value()
+                        {
                             let ptr_val = basic_value.into_pointer_value();
                             if live_set.contains(&ptr_val) {
                                 // LIVE: It provides a value that is needed.
@@ -110,21 +124,24 @@ impl<'ctx> DSEAnalysis<'ctx> {
                                 self.dead_instructions.push(instr);
                             }
                         }
+                    }
                 }
                 InstructionOpcode::Load => {
                     // Operand 0 is the pointer in `load type, ptr`
                     if let Some(Operand::Value(basic_value)) = instr.get_operand(0)
-                        && basic_value.is_pointer_value() {
-                            live_set.insert(basic_value.into_pointer_value());
-                        }
+                        && basic_value.is_pointer_value()
+                    {
+                        live_set.insert(basic_value.into_pointer_value());
+                    }
                 }
                 _ => {
                     // Conservative: any other instruction marks its pointer operands as live (READ)
                     for i in 0..instr.get_num_operands() {
                         if let Some(Operand::Value(basic_value)) = instr.get_operand(i)
-                            && basic_value.is_pointer_value() {
-                                live_set.insert(basic_value.into_pointer_value());
-                            }
+                            && basic_value.is_pointer_value()
+                        {
+                            live_set.insert(basic_value.into_pointer_value());
+                        }
                     }
                 }
             }

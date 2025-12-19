@@ -1,0 +1,403 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "001-dead-store-elimination" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Job 1: Code Quality and Linting
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # Job 2: Build and Test
+  test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    needs: quality
+    strategy:
+      matrix:
+        rust: [stable, nightly]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Install LLVM 21
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y llvm-21 llvm-21-dev llvm-21-runtime clang-21 libpolly-21-dev
+
+      - name: Set LLVM environment variables
+        run: |
+          echo "LLVM_SYS_210_PREFIX=/usr/lib/llvm-21" >> $GITHUB_ENV
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.rust }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.rust }}-cargo-
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Build release
+        run: cargo build --release --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Verify test fixtures exist
+        run: |
+          test -f tests/fixtures/dse_target.ll
+          test -f tests/fixtures/no_op.ll
+          test -f tests/fixtures/volatile_protect.ll
+
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-failures-${{ matrix.rust }}
+          path: |
+            target/debug/
+            tests/
+
+  # Job 3: Benchmarking
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM 21
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y llvm-21 llvm-21-dev llvm-21-runtime clang-21 libpolly-21-dev
+
+      - name: Set LLVM environment variables
+        run: |
+          echo "LLVM_SYS_210_PREFIX=/usr/lib/llvm-21" >> $GITHUB_ENV
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Verify benchmark files exist
+        run: |
+          test -f benches/benchmark.c
+          test -x scripts/run_benchmark.sh
+
+      - name: Run benchmark
+        run: ./scripts/run_benchmark.sh
+
+      - name: Check benchmark results
+        run: |
+          test -f benchmark_results.txt
+          cat benchmark_results.txt
+          
+      - name: Extract metrics from results
+        id: metrics
+        run: |
+          STORES_REMOVED=$(grep "Removed:" benchmark_results.txt | head -1 | awk '{print $3}')
+          STORES_PERCENT=$(grep "Removed:" benchmark_results.txt | head -1 | grep -oP '\(\K[0-9.]+')
+          echo "stores_removed=$STORES_REMOVED" >> $GITHUB_OUTPUT
+          echo "stores_percent=$STORES_PERCENT" >> $GITHUB_OUTPUT
+
+      - name: Display benchmark summary
+        run: |
+          echo "### Benchmark Results 📊" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Stores Removed | ${{ steps.metrics.outputs.stores_removed }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Reduction Percentage | ${{ steps.metrics.outputs.stores_percent }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Full results:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat benchmark_results.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmark_results.txt
+            target/benchmark/
+          retention-days: 30
+
+      - name: Fail if no optimization occurred
+        run: |
+          STORES_REMOVED=${{ steps.metrics.outputs.stores_removed }}
+          if [ "$STORES_REMOVED" -eq "0" ]; then
+            echo "❌ Error: No stores were eliminated by DSE pass"
+            exit 1
+          else
+            echo "✅ Success: $STORES_REMOVED stores eliminated"
+          fi
+
+  # Job 4: Documentation Check
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM 21
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y llvm-21 llvm-21-dev llvm-21-runtime
+
+      - name: Set LLVM environment variables
+        run: |
+          echo "LLVM_SYS_210_PREFIX=/usr/lib/llvm-21" >> $GITHUB_ENV
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-docs-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build documentation
+        run: cargo doc --no-deps --document-private-items
+
+      - name: Check documentation links
+        run: cargo doc --no-deps --document-private-items 2>&1 | tee doc-output.txt
+        continue-on-error: true
+
+      - name: Verify documentation files exist
+        run: |
+          test -f README.md
+          test -f docs/algorithm_summary.md
+          test -f docs/acd_2025_hw6.md
+
+      - name: Upload documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: |
+            target/doc/
+            docs/
+          retention-days: 30
+
+  # Job 5: Security Audit
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run security audit
+        run: cargo audit
+
+  # Job 6: Code Coverage (Optional)
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install LLVM 21
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y llvm-21 llvm-21-dev llvm-21-runtime
+
+      - name: Set LLVM environment variables
+        run: |
+          echo "LLVM_SYS_210_PREFIX=/usr/lib/llvm-21" >> $GITHUB_ENV
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Generate coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: lcov.info
+          retention-days: 30
+
+  # Job 7: Release Build
+  release:
+    name: Release Build
+    runs-on: ubuntu-latest
+    needs: [test, benchmark]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/001-dead-store-elimination'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM 21
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y llvm-21 llvm-21-dev llvm-21-runtime clang-21
+
+      - name: Set LLVM environment variables
+        run: |
+          echo "LLVM_SYS_210_PREFIX=/usr/lib/llvm-21" >> $GITHUB_ENV
+
+      - name: Build optimized release
+        run: cargo build --release --verbose
+
+      - name: Strip binary
+        run: strip target/release/ntu-2025fall-advanced-compiler-hw6-g36maid
+
+      - name: Create release package
+        run: |
+          mkdir -p release-package
+          cp target/release/ntu-2025fall-advanced-compiler-hw6-g36maid release-package/
+          cp README.md release-package/
+          cp -r docs release-package/
+          cp -r tests release-package/
+          cp -r benches release-package/
+          cp -r scripts release-package/
+          cp Cargo.toml Cargo.lock release-package/
+          tar czf dse-pass-${{ github.sha }}.tar.gz release-package/
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dse-pass-release
+          path: dse-pass-${{ github.sha }}.tar.gz
+          retention-days: 90
+
+  # Job 8: Summary Report
+  summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [quality, test, benchmark, docs, security]
+    if: always()
+    steps:
+      - name: Generate pipeline summary
+        run: |
+          echo "# CI/CD Pipeline Summary 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Job Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Quality | ${{ needs.quality.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build & Test | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Benchmark | ${{ needs.benchmark.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Documentation | ${{ needs.docs.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Audit | ${{ needs.security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,28 @@
+Dead Store Elimination Benchmark Results
+Generated: Fri Dec 19 03:31:32 PM CST 2025
+========================================
+
+Store Instructions:
+  Before:  83
+  After:   74
+  Removed: 9 (10.84%)
+
+Total IR Lines:
+  Before:  663
+  After:   654
+  Removed: 9 (1.36%)
+
+Files:
+  Original IR:   /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_original.ll
+  Optimized IR:  /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_optimized.ll
+  Optimized BC:  /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_optimized.bc
+
+To view detailed IR differences:
+  diff -u /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_original.ll /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_optimized.ll | less
+
+To verify correctness:
+  clang /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_original.ll -o /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_original
+  clang /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_optimized.ll -o /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_optimized
+  /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_original > /tmp/original_output.txt
+  /home/g36maid/School/ntu/advence-compiler/ntu-2025fall-advanced-compiler-hw6-G36maid/target/benchmark/benchmark_optimized > /tmp/optimized_output.txt
+  diff /tmp/original_output.txt /tmp/optimized_output.txt
