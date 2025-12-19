@@ -33,3 +33,26 @@ Thumbs.db
 .opencode/
 .specify/
 specs/
+
+# LaTeX auxiliary files
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.out
+*.toc
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+*.dvi
+*.ps
+
+# Documentation build artifacts  
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.synctex.gz
