@@ -1,0 +1,6 @@
+[package]
+name = "ntu-2025fall-advanced-compiler-hw6-G36maid"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
