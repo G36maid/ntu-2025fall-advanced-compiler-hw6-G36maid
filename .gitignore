@@ -1,1 +1,33 @@
+# Rust build artifacts
 /target
+/target/
+debug/
+release/
+*.rs.bk
+*.rlib
+
+# LLVM bitcode files
+**/*.bc
+
+# Logs and profiling
+*.log
+*.prof*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# project specify
+.opencode/
+.specify/

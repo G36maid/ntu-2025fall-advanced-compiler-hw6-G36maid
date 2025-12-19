@@ -1,6 +1,9 @@
 [package]
-name = "ntu-2025fall-advanced-compiler-hw6-G36maid"
+name = "ntu-2025fall-advanced-compiler-hw6-g36maid"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+inkwell = { version = "0.7.0", features = ["llvm21-1"] }
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
