@@ -51,8 +51,11 @@ specs/
 *.dvi
 *.ps
 
-# Documentation build artifacts  
+# Documentation build artifacts
 docs/*.aux
 docs/*.log
 docs/*.out
 docs/*.synctex.gz
+
+# submit zip
+*.zip
